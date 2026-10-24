@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nivedha}
+      POSTGRES_USER: ${POSTGRES_USER:-nivedha}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      TZ: Asia/Kolkata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nivedha}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-nivedha}
+      JWT_SECRET: ${JWT_SECRET:-replace-this-development-secret-with-a-long-random-value}
+      OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:-replace-this-development-otp-secret-with-a-long-random-value}
+      OTP_DELIVERY: ${OTP_DELIVERY:-console}
+      PUSH_DELIVERY: ${PUSH_DELIVERY:-disabled}
+      FILE_STORAGE_ROOT: /data/files
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
+      INITIAL_SUPER_ADMIN_NAME: ${INITIAL_SUPER_ADMIN_NAME:-Nivedha Super Admin}
+      INITIAL_SUPER_ADMIN_EMAIL: ${INITIAL_SUPER_ADMIN_EMAIL:-}
+      INITIAL_SUPER_ADMIN_PHONE: ${INITIAL_SUPER_ADMIN_PHONE:-}
+      INITIAL_BUSINESS_NAME: ${INITIAL_BUSINESS_NAME:-Chamber Bricks}
+      INITIAL_BUSINESS_SLUG: ${INITIAL_BUSINESS_SLUG:-chamber-bricks}
+      ALLOWED_ORIGINS: '["http://localhost:8081"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - invoice_files:/data/files
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  invoice_files:

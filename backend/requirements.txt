@@ -1,0 +1,11 @@
+alembic>=1.13,<2
+asyncpg>=0.29,<1
+email-validator>=2.1,<3
+fastapi>=0.115,<1
+firebase-admin>=6.5,<8
+PyJWT>=2.8,<3
+pydantic[email]>=2.8,<3
+pydantic-settings>=2.4,<3
+python-multipart>=0.0.9,<1
+SQLAlchemy[asyncio]>=2.0.32,<3
+uvicorn[standard]>=0.30,<1

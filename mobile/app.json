@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Nivedha Groups",
+    "slug": "nivedha-groups",
+    "scheme": "nivedhagroups",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.nivedhagroups.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Choose a profile picture or expense bill.",
+        "NSCameraUsageDescription": "Capture a profile picture or expense bill."
+      }
+    },
+    "android": {
+      "package": "com.nivedhagroups.mobile",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES", "POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "expo-secure-store",
+      ["expo-image-picker", { "photosPermission": "Choose a profile picture or expense bill.", "cameraPermission": "Capture a profile picture or expense bill." }],
+      ["expo-notifications", { "defaultChannel": "transactions" }]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:8000/api/v1"
+    }
+  }
+}
