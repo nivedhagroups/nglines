@@ -119,9 +119,9 @@ class DeviceToken(TimestampMixin, Base):
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     __table_args__ = (
-        Index("ix_audit_business_time", "business_id", "created_at"),
-        Index("ix_audit_actor_time", "actor_id", "created_at"),
-        Index("ix_audit_entity_time", "entity_type", "entity_id", "created_at"),
+        Index("ix_audit_business_time", "business_id", "occurred_at"),
+        Index("ix_audit_actor_time", "actor_id", "occurred_at"),
+        Index("ix_audit_entity_time", "entity_type", "entity_id", "occurred_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)

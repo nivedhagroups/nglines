@@ -70,7 +70,7 @@ class InvoiceLine(TenantMixin, Base):
     __table_args__ = (
         ForeignKeyConstraint(["business_id", "invoice_id"], ["invoices.business_id", "invoices.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(["business_id", "brick_type_id"], ["brick_types.business_id", "brick_types.id"], ondelete="RESTRICT"),
-        CheckConstraint("quantity > 0 AND rate >= 0 AND line_total >= 0", name="ck_invoice_line_values"),
+        CheckConstraint("quantity > 0 AND unit_rate >= 0 AND line_total >= 0", name="ck_invoice_line_values"),
         Index("ix_invoice_line_business_invoice", "business_id", "invoice_id"),
     )
 
@@ -132,7 +132,7 @@ class EstimateLine(TenantMixin, Base):
     __table_args__ = (
         ForeignKeyConstraint(["business_id", "estimate_id"], ["estimates.business_id", "estimates.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(["business_id", "brick_type_id"], ["brick_types.business_id", "brick_types.id"], ondelete="RESTRICT"),
-        CheckConstraint("quantity > 0 AND rate >= 0 AND line_total >= 0", name="ck_estimate_line_values"),
+        CheckConstraint("quantity > 0 AND unit_rate >= 0 AND line_total >= 0", name="ck_estimate_line_values"),
         Index("ix_estimate_line_business_estimate", "business_id", "estimate_id"),
     )
 
