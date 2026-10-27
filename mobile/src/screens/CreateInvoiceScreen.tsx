@@ -88,7 +88,7 @@ export function CreateInvoiceScreen({ mode = "invoice", invoiceId }: { mode?: "i
         discount_percent: values.discount_percent || "0",
         customer_gstin: values.customer_gstin || undefined,
         customer_id: newCustomer ? undefined : values.customer_id,
-        new_customer: newCustomer ? { name: values.new_name?.trim(), mobile: values.new_mobile, email: values.new_email || undefined, gstin: values.customer_gstin || undefined } : undefined,
+        new_customer: newCustomer ? { name: values.new_name!.trim(), mobile: values.new_mobile!, email: values.new_email || undefined, gstin: values.customer_gstin || undefined } : undefined,
         responsible_manager_id: isGroupRole ? values.brick_manager_id : undefined,
         items: values.items.map((item) => ({ brick_type_id: item.brick_type_id, quantity: item.quantity })),
       };

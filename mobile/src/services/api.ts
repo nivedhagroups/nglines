@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 import {
   clearSession,
   getAccessToken,
@@ -7,10 +8,17 @@ import {
 } from "./session";
 import type { ApiErrorShape, SessionPayload } from "../types/api";
 
-export const API_BASE =
+const configuredApiBase =
   process.env.EXPO_PUBLIC_API_URL ??
-  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
-  "http://localhost:8000/api/v1";
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined);
+
+export const API_BASE =
+  Platform.OS === "android"
+    ? (configuredApiBase ?? "http://10.0.2.2:8000/api/v1").replace(
+        "://localhost",
+        "://10.0.2.2",
+      )
+    : configuredApiBase ?? "http://localhost:8000/api/v1";
 
 let activeBusinessId: string | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
@@ -91,7 +99,7 @@ export async function apiRequest<T>(
   } catch {
     throw new ApiError("You appear to be offline. Check your connection and retry.", 0, "network_error");
   }
-  const authEndpointsWithoutRefresh = ["/auth/otp/request", "/auth/otp/verify", "/auth/refresh", "/auth/logout"];
+  const authEndpointsWithoutRefresh = ["/auth/login", "/auth/password/change", "/auth/refresh", "/auth/logout"];
   if (response.status === 401 && retryAuth && !authEndpointsWithoutRefresh.includes(path)) {
     const renewed = await refreshAccessToken();
     if (renewed) return apiRequest<T>(path, options, false);
@@ -107,16 +115,16 @@ export async function apiRequest<T>(
 }
 
 export const authApi = {
-  requestOtp: (identifier: string) =>
-    apiRequest<{ challenge_id: string; expires_in_seconds: number }>(
-      "/auth/otp/request",
-      { method: "POST", body: JSON.stringify({ identifier }) },
+  login: (identifier: string, password: string) =>
+    apiRequest<SessionPayload>(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify({ identifier, password }) },
       false,
     ),
-  verifyOtp: (challengeId: string, code: string) =>
+  changePassword: (current_password: string, new_password: string) =>
     apiRequest<SessionPayload>(
-      "/auth/otp/verify",
-      { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) },
+      "/auth/password/change",
+      { method: "POST", body: JSON.stringify({ current_password, new_password }) },
       false,
     ),
   logout: (refreshToken: string) =>

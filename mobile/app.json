@@ -16,12 +16,28 @@
     },
     "android": {
       "package": "com.nivedhagroups.mobile",
-      "permissions": ["CAMERA", "READ_MEDIA_IMAGES", "POST_NOTIFICATIONS"]
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "plugins": [
       "expo-secure-store",
-      ["expo-image-picker", { "photosPermission": "Choose a profile picture or expense bill.", "cameraPermission": "Capture a profile picture or expense bill." }],
-      ["expo-notifications", { "defaultChannel": "transactions" }]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a profile picture or expense bill.",
+          "cameraPermission": "Capture a profile picture or expense bill."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "transactions"
+        }
+      ],
+      "expo-asset"
     ],
     "extra": {
       "apiBaseUrl": "http://localhost:8000/api/v1"

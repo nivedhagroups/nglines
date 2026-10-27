@@ -13,13 +13,11 @@ import { API_BASE, ApiError, apiRequest } from "../services/api";
 import { getAccessToken } from "../services/session";
 import { useAuth } from "../state/AuthContext";
 import { colors, spacing, typography } from "../theme";
-import { useAuth } from "../state/AuthContext";
 
 const schema = z.object({ name: z.string().trim().min(1, "Name is required"), email: z.union([z.string().email(), z.literal("")]), phone: z.union([z.string().regex(/^(?:\+91)?[6-9][0-9]{9}$/), z.literal("")]) }).refine((value) => Boolean(value.email || value.phone), { path: ["phone"], message: "Keep at least one login contact" });
 type Values = z.infer<typeof schema>;
 
 export function ProfileScreen() {
-  const auth = useAuth();
   const auth = useAuth();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);

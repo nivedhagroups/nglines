@@ -1,5 +1,7 @@
 export type RootStackParamList = {
   Login: undefined;
+  ChangePassword: undefined;
+  Authenticated: undefined;
   Main: undefined;
   CreateInvoice: undefined;
   EditInvoice: { invoiceId: string };

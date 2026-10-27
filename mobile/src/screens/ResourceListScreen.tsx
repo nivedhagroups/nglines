@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -14,6 +14,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing, typography } from "../theme";
 import { ActionButton } from "../components/ActionButton";
 import { FormField } from "../components/FormField";
+import { shareDocumentPdf } from "../services/shareDocument";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ResourceList">;
 type Row = Record<string, unknown>;
@@ -59,6 +60,7 @@ export function ResourceListScreen({ route }: Props) {
           <Text style={styles.primary}>{String(row.name ?? row.title ?? row.invoice_number ?? row.estimate_number ?? row.action ?? row.legal_name ?? row.id ?? "Record")}</Text>
           <Text style={styles.secondary}>{String(row.status ?? row.role ?? row.occurred_at ?? row.created_at ?? row.display_name ?? "")}</Text>
           {row.message ? <Text style={styles.secondary}>{String(row.message)}</Text> : null}
+          {resource === "estimates" ? <ActionButton title="Share PDF" variant="quiet" onPress={() => void shareDocumentPdf("estimates", String(row.id), String(row.estimate_number ?? "estimate")).catch((error) => Alert.alert("Could not share PDF", error instanceof Error ? error.message : "Try again."))} /> : null}
           {resource === "estimates" && !row.converted_invoice_id ? <ActionButton title="Convert to invoice" loading={convertMutation.isPending} variant="secondary" onPress={() => convertMutation.mutate(String(row.id))} /> : null}
           {resource === "flags" ? <FlagRecordActions row={row} businessId={auth.activeBusiness?.id ?? ""} role={auth.activeBusiness?.role ?? "manager"} /> : null}
         </View>

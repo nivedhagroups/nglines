@@ -18,8 +18,8 @@ type AuthState = {
   user: SessionUser | null;
   businesses: BusinessAccess[];
   activeBusiness: BusinessAccess | null;
-  requestOtp(identifier: string): Promise<{ challenge_id: string; expires_in_seconds: number }>;
-  verifyOtp(challengeId: string, code: string): Promise<void>;
+  login(identifier: string, password: string): Promise<void>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   selectBusiness(id: string): Promise<void>;
   logout(): Promise<void>;
 };
@@ -79,10 +79,14 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
     void registerForPushNotifications().catch(() => undefined);
   }, [user?.id]);
 
-  const requestOtp = (identifier: string) => authApi.requestOtp(identifier);
+  const login = async (identifier: string, password: string) => {
+    const session = await authApi.login(identifier, password);
+    await storeSession(session);
+    await activate(session);
+  };
 
-  const verifyOtp = async (challengeId: string, code: string) => {
-    const session = await authApi.verifyOtp(challengeId, code);
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    const session = await authApi.changePassword(currentPassword, newPassword);
     await storeSession(session);
     await activate(session);
   };
@@ -117,7 +121,7 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
   };
 
   return (
-    <AuthContext.Provider value={{ ready, user, businesses, activeBusiness, requestOtp, verifyOtp, selectBusiness, logout }}>
+    <AuthContext.Provider value={{ ready, user, businesses, activeBusiness, login, changePassword, selectBusiness, logout }}>
       {children}
     </AuthContext.Provider>
   );

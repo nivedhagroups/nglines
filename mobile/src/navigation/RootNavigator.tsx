@@ -8,6 +8,7 @@ import { BookOpenText, ChartNoAxesCombined, CircleDollarSign, ContactRound, Elli
 import type { MainTabParamList, RootStackParamList } from "./types";
 import { useAuth } from "../state/AuthContext";
 import { LoginScreen } from "../screens/LoginScreen";
+import { ChangePasswordScreen } from "../screens/ChangePasswordScreen";
 import { DashboardScreen } from "../screens/DashboardScreen";
 import { InvoiceListScreen } from "../screens/InvoiceListScreen";
 import { ExpenseListScreen } from "../screens/ExpenseListScreen";
@@ -82,7 +83,11 @@ export function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paper } }}>
-        {auth.user ? <Stack.Screen name="Main" component={AuthenticatedStack} /> : <Stack.Screen name="Login" component={LoginScreen} />}
+        {auth.user?.must_change_password
+          ? <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+          : auth.user
+            ? <Stack.Screen name="Authenticated" component={AuthenticatedStack} />
+            : <Stack.Screen name="Login" component={LoginScreen} />}
       </Stack.Navigator>
     </NavigationContainer>
   );

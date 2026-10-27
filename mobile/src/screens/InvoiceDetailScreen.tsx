@@ -1,14 +1,15 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { FlagAction } from "../components/FlagAction";
-import { Pencil } from "lucide-react-native";
+import { FileDown, Pencil } from "lucide-react-native";
 import { EmptyState, ErrorState, LoadingState } from "../components/QueryState";
 import { PageTitle } from "../components/PageTitle";
 import { Screen } from "../components/Screen";
 import { resources } from "../services/resources";
+import { shareDocumentPdf } from "../services/shareDocument";
 import type { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../state/AuthContext";
 import { colors, spacing, typography } from "../theme";
@@ -23,7 +24,7 @@ export function InvoiceDetailScreen({ route }: Props) {
   return (
     <Screen>
       {query.isPending ? <LoadingState /> : query.isError ? <ErrorState message={query.error.message} onRetry={() => void query.refetch()} /> : !invoice ? <EmptyState title="Invoice unavailable" detail="This invoice may have been removed or is outside your business." /> : <>
-        <PageTitle eyebrow={String(invoice.invoice_date ?? "")} title={String(invoice.invoice_number ?? "Invoice")} trailing={<View style={styles.titleActions}>{auth.activeBusiness?.role ? <Pressable accessibilityRole="button" accessibilityLabel="Correct invoice" style={styles.edit} onPress={() => navigation.navigate("EditInvoice", { invoiceId: route.params.invoiceId })}><Pencil size={18} color={colors.forest} /></Pressable> : null}<FlagAction entityType="invoice" entityId={route.params.invoiceId} /></View>} />
+        <PageTitle eyebrow={String(invoice.invoice_date ?? "")} title={String(invoice.invoice_number ?? "Invoice")} trailing={<View style={styles.titleActions}><Pressable accessibilityRole="button" accessibilityLabel="Share invoice PDF" style={styles.edit} onPress={() => void shareDocumentPdf("invoices", route.params.invoiceId, String(invoice.invoice_number ?? "invoice")).catch((error) => Alert.alert("Could not share PDF", error instanceof Error ? error.message : "Try again."))}><FileDown size={18} color={colors.forest} /></Pressable>{auth.activeBusiness?.role ? <Pressable accessibilityRole="button" accessibilityLabel="Correct invoice" style={styles.edit} onPress={() => navigation.navigate("EditInvoice", { invoiceId: route.params.invoiceId })}><Pencil size={18} color={colors.forest} /></Pressable> : null}<FlagAction entityType="invoice" entityId={route.params.invoiceId} /></View>} />
         <View style={styles.summary}><Text style={styles.customer}>{String(invoice.customer_name ?? "Customer")}</Text><Text style={styles.amount}>{new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(invoice.total_amount ?? 0))}</Text><Text style={styles.meta}>{String(invoice.status ?? "").toUpperCase()}</Text></View>
         <Text style={styles.section}>Line items</Text>
         {Array.isArray(invoice.items) ? invoice.items.map((item, index) => {

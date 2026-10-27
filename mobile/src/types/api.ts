@@ -14,6 +14,7 @@ export type SessionUser = {
   email: string | null;
   phone: string | null;
   organization_role: OrganizationRole | null;
+  must_change_password: boolean;
 };
 
 export type SessionPayload = {
