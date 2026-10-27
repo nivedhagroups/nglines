@@ -1,5 +1,5 @@
 from app.models.configuration import BrickRate, BrickType, BusinessSettings, Customer, GstRate
-from app.models.core import AuthSession, Business, BusinessMembership, OtpChallenge, OtpRateLimit, User
+from app.models.core import AuthSession, Business, BusinessMembership, LoginRateLimit, User
 from app.models.financial import (
     AdvanceRecovery,
     Estimate,
@@ -48,8 +48,7 @@ __all__ = [
     "InvoiceLine",
     "IdempotencyRecord",
     "Notification",
-    "OtpChallenge",
-    "OtpRateLimit",
+    "LoginRateLimit",
     "ShareLink",
     "StoredFile",
     "TransactionFlag",

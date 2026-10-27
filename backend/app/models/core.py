@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, BusinessRole, OrganizationRole, OtpChannel, TimestampMixin, enum_column
+from app.db.base import Base, BusinessRole, OrganizationRole, TimestampMixin, enum_column
 
 
 class Business(TimestampMixin, Base):
@@ -25,6 +25,8 @@ class User(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str | None] = mapped_column(String(254), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(512))
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     organization_role: Mapped[OrganizationRole | None] = mapped_column(
         enum_column(OrganizationRole, "organization_role")
     )
@@ -47,26 +49,12 @@ class BusinessMembership(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
-class OtpChallenge(TimestampMixin, Base):
-    __tablename__ = "otp_challenges"
-    __table_args__ = (Index("ix_otp_destination_created", "destination_normalized", "created_at"),)
+class LoginRateLimit(TimestampMixin, Base):
+    __tablename__ = "login_rate_limits"
+    __table_args__ = (UniqueConstraint("identifier", "window_started_at", name="uq_login_rate_window"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    destination_normalized: Mapped[str] = mapped_column(String(254), nullable=False)
-    channel: Mapped[OtpChannel] = mapped_column(enum_column(OtpChannel, "otp_channel"), nullable=False)
-    code_hash: Mapped[str] = mapped_column(String(256), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    max_attempts: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class OtpRateLimit(TimestampMixin, Base):
-    __tablename__ = "otp_rate_limits"
-    __table_args__ = (UniqueConstraint("destination_normalized", "window_started_at", name="uq_otp_rate_window"),)
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    destination_normalized: Mapped[str] = mapped_column(String(254), nullable=False)
+    identifier: Mapped[str] = mapped_column(String(254), nullable=False)
     window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     request_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 

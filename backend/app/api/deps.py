@@ -3,7 +3,7 @@ from typing import Annotated
 import uuid
 
 import jwt
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +18,7 @@ bearer = HTTPBearer(auto_error=False)
 Db = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def current_user(
+async def authenticated_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     db: Db,
 ) -> User:
@@ -31,6 +31,12 @@ async def current_user(
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(401, "User is inactive or unavailable")
+    return user
+
+
+async def current_user(request: Request, user: Annotated[User, Depends(authenticated_user)]) -> User:
+    if user.must_change_password and request.url.path != "/api/v1/auth/me":
+        raise HTTPException(403, "Change your temporary password to continue")
     return user
 
 

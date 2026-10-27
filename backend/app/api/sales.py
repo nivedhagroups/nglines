@@ -4,6 +4,7 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -13,6 +14,9 @@ from app.api.deps import BusinessContext, Db, User, business_context, current_us
 from app.db.base import BusinessRole, EntityType, OrganizationRole, RecordStatus
 from app.db.session import get_db
 from app.core.identity import normalize_phone
+from app.models.operations import StoredFile
+from app.services.document_pdf import store_document_pdf
+from app.services.files import resolve_storage_path
 from app.models import (
     BrickRate,
     BrickType,
@@ -305,9 +309,10 @@ async def replace_document(db, document, body: SaleCreate, context: BusinessCont
     for line in old_lines:
         line.deleted_at = datetime.now(timezone.utc)
         line.updated_by_id = user.id
-    for line in lines:
-        db.add(line_type(**{parent_key: document.id, "business_id": context.business.id, "created_by_id": user.id, **line}))
+    replacement_lines = [line_type(**{parent_key: document.id, "business_id": context.business.id, "created_by_id": user.id, **line}) for line in lines]
+    db.add_all(replacement_lines)
     await db.flush()
+    await store_document_pdf(db, document, replacement_lines, doc_type, user.id)
     await add_audit(db, user, context, "update", doc_type, document.id, before, {**snapshot(document, fields), "replaced_lines": len(lines)})
     await db.commit()
     return document
@@ -326,7 +331,9 @@ async def create_invoice(
     if cached is not None:
         return {"data": cached, "request_id": getattr(request.state, "request_id", None)}
     invoice = await create_document(db, body, context, user, "invoice")
-    data = {"id": str(invoice.id), "business_id": str(invoice.business_id), "invoice_number": invoice.invoice_number, "invoice_date": invoice.invoice_date.isoformat(), "status": invoice.status.value, "subtotal": str(invoice.subtotal), "discount_amount": str(invoice.discount_amount), "taxable_amount": str(invoice.taxable_amount), "gst_rate": str(invoice.gst_rate), "cgst_amount": str(invoice.cgst_amount), "sgst_amount": str(invoice.sgst_amount), "igst_amount": str(invoice.igst_amount), "total_amount": str(invoice.total_amount), "apply_gst": invoice.apply_gst}
+    invoice_lines = list((await db.scalars(select(InvoiceLine).where(InvoiceLine.invoice_id == invoice.id, InvoiceLine.business_id == context.business.id, InvoiceLine.deleted_at.is_(None)))).all())
+    await store_document_pdf(db, invoice, invoice_lines, "invoice", user.id)
+    data = {"id": str(invoice.id), "business_id": str(invoice.business_id), "invoice_number": invoice.invoice_number, "invoice_date": invoice.invoice_date.isoformat(), "status": invoice.status.value, "subtotal": str(invoice.subtotal), "discount_amount": str(invoice.discount_amount), "taxable_amount": str(invoice.taxable_amount), "gst_rate": str(invoice.gst_rate), "cgst_amount": str(invoice.cgst_amount), "sgst_amount": str(invoice.sgst_amount), "igst_amount": str(invoice.igst_amount), "total_amount": str(invoice.total_amount), "apply_gst": invoice.apply_gst, "pdf_url": f"/invoices/{invoice.id}/pdf"}
     if record is not None:
         record.response_body = data
     await db.commit()
@@ -346,7 +353,9 @@ async def create_estimate(
     if cached is not None:
         return {"data": cached, "request_id": getattr(request.state, "request_id", None)}
     estimate = await create_document(db, body, context, user, "estimate")
-    data = {"id": str(estimate.id), "business_id": str(estimate.business_id), "estimate_number": estimate.estimate_number, "estimate_date": estimate.estimate_date.isoformat(), "status": estimate.status.value, "total_amount": str(estimate.total_amount), "apply_gst": estimate.apply_gst, "document_label": "ESTIMATE – Not a Tax Invoice"}
+    estimate_lines = list((await db.scalars(select(EstimateLine).where(EstimateLine.estimate_id == estimate.id, EstimateLine.business_id == context.business.id, EstimateLine.deleted_at.is_(None)))).all())
+    await store_document_pdf(db, estimate, estimate_lines, "estimate", user.id)
+    data = {"id": str(estimate.id), "business_id": str(estimate.business_id), "estimate_number": estimate.estimate_number, "estimate_date": estimate.estimate_date.isoformat(), "status": estimate.status.value, "total_amount": str(estimate.total_amount), "apply_gst": estimate.apply_gst, "document_label": "ESTIMATE - Not a Tax Invoice", "pdf_url": f"/estimates/{estimate.id}/pdf"}
     if record is not None:
         record.response_body = data
     await db.commit()
@@ -379,8 +388,23 @@ async def get_invoice(invoice_id: uuid.UUID, request: Request, db: Db, context: 
         raise HTTPException(404, "Invoice not found")
     lines = await db.scalars(select(InvoiceLine).where(InvoiceLine.invoice_id == invoice.id, InvoiceLine.business_id == context.business.id, InvoiceLine.deleted_at.is_(None)))
     data = {field: getattr(invoice, field) for field in sale_snapshot_fields()}
-    data.update({"id": str(invoice.id), "business_id": str(invoice.business_id), "responsible_manager_id": str(invoice.responsible_user_id) if invoice.responsible_user_id else None, "customer_name": invoice.customer_name_snapshot, "customer_mobile": invoice.customer_mobile_snapshot, "customer_gstin": invoice.customer_gstin_snapshot, "items": [{"brick_type_id": str(line.brick_type_id), "description": line.description_snapshot, "quantity": str(line.quantity), "unit_rate": str(line.unit_rate), "line_total": str(line.line_total)} for line in lines]})
+    data.update({"id": str(invoice.id), "business_id": str(invoice.business_id), "responsible_manager_id": str(invoice.responsible_user_id) if invoice.responsible_user_id else None, "customer_name": invoice.customer_name_snapshot, "customer_mobile": invoice.customer_mobile_snapshot, "customer_gstin": invoice.customer_gstin_snapshot, "pdf_url": f"/invoices/{invoice.id}/pdf", "items": [{"brick_type_id": str(line.brick_type_id), "description": line.description_snapshot, "quantity": str(line.quantity), "unit_rate": str(line.unit_rate), "line_total": str(line.line_total)} for line in lines]})
     return {"data": data, "request_id": getattr(request.state, "request_id", None)}
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def download_invoice_pdf(invoice_id: uuid.UUID, db: Db, context: Annotated[BusinessContext, Depends(business_context)], user: Annotated[User, Depends(current_user)]) -> FileResponse:
+    invoice = await db.scalar(select(Invoice).where(Invoice.id == invoice_id, Invoice.business_id == context.business.id, Invoice.deleted_at.is_(None)))
+    if invoice is None:
+        raise HTTPException(404, "Invoice not found")
+    lines = list((await db.scalars(select(InvoiceLine).where(InvoiceLine.invoice_id == invoice.id, InvoiceLine.business_id == context.business.id, InvoiceLine.deleted_at.is_(None)))).all())
+    stored = await db.get(StoredFile, invoice.pdf_file_id) if invoice.pdf_file_id else None
+    path = resolve_storage_path(stored.storage_path) if stored else None
+    if path is None or not path.is_file():
+        stored = await store_document_pdf(db, invoice, lines, "invoice", user.id)
+        await db.commit()
+        path = resolve_storage_path(stored.storage_path)
+    return FileResponse(path, media_type="application/pdf", filename=stored.original_filename)
 
 
 @router.patch("/invoices/{invoice_id}")
@@ -430,7 +454,22 @@ async def get_estimate(estimate_id: uuid.UUID, request: Request, db: Db, context
     if estimate is None:
         raise HTTPException(404, "Estimate not found")
     lines = await db.scalars(select(EstimateLine).where(EstimateLine.estimate_id == estimate.id, EstimateLine.business_id == context.business.id, EstimateLine.deleted_at.is_(None)))
-    return {"data": {"id": str(estimate.id), "estimate_number": estimate.estimate_number, "estimate_date": estimate.estimate_date.isoformat(), "customer_name": estimate.customer_name_snapshot, "total_amount": str(estimate.total_amount), "apply_gst": estimate.apply_gst, "converted_invoice_id": str(estimate.converted_invoice_id) if estimate.converted_invoice_id else None, "document_label": "ESTIMATE – Not a Tax Invoice", "items": [{"description": line.description_snapshot, "quantity": str(line.quantity), "unit_rate": str(line.unit_rate), "line_total": str(line.line_total)} for line in lines]}, "request_id": getattr(request.state, "request_id", None)}
+    return {"data": {"id": str(estimate.id), "estimate_number": estimate.estimate_number, "estimate_date": estimate.estimate_date.isoformat(), "customer_name": estimate.customer_name_snapshot, "total_amount": str(estimate.total_amount), "apply_gst": estimate.apply_gst, "converted_invoice_id": str(estimate.converted_invoice_id) if estimate.converted_invoice_id else None, "document_label": "ESTIMATE - Not a Tax Invoice", "pdf_url": f"/estimates/{estimate.id}/pdf", "items": [{"description": line.description_snapshot, "quantity": str(line.quantity), "unit_rate": str(line.unit_rate), "line_total": str(line.line_total)} for line in lines]}, "request_id": getattr(request.state, "request_id", None)}
+
+
+@router.get("/estimates/{estimate_id}/pdf")
+async def download_estimate_pdf(estimate_id: uuid.UUID, db: Db, context: Annotated[BusinessContext, Depends(business_context)], user: Annotated[User, Depends(current_user)]) -> FileResponse:
+    estimate = await db.scalar(select(Estimate).where(Estimate.id == estimate_id, Estimate.business_id == context.business.id, Estimate.deleted_at.is_(None)))
+    if estimate is None:
+        raise HTTPException(404, "Estimate not found")
+    lines = list((await db.scalars(select(EstimateLine).where(EstimateLine.estimate_id == estimate.id, EstimateLine.business_id == context.business.id, EstimateLine.deleted_at.is_(None)))).all())
+    stored = await db.get(StoredFile, estimate.pdf_file_id) if estimate.pdf_file_id else None
+    path = resolve_storage_path(stored.storage_path) if stored else None
+    if path is None or not path.is_file():
+        stored = await store_document_pdf(db, estimate, lines, "estimate", user.id)
+        await db.commit()
+        path = resolve_storage_path(stored.storage_path)
+    return FileResponse(path, media_type="application/pdf", filename=stored.original_filename)
 
 
 @router.patch("/estimates/{estimate_id}")
@@ -508,10 +547,12 @@ async def convert_estimate(estimate_id: uuid.UUID, body: ConvertEstimate, reques
     estimate_lines = await db.scalars(select(EstimateLine).where(EstimateLine.estimate_id == estimate.id, EstimateLine.business_id == context.business.id, EstimateLine.deleted_at.is_(None)))
     for line in estimate_lines:
         db.add(InvoiceLine(business_id=context.business.id, created_by_id=user.id, invoice_id=invoice.id, brick_type_id=line.brick_type_id, description_snapshot=line.description_snapshot, quantity=line.quantity, unit_rate=line.unit_rate, line_total=line.line_total))
+    converted_lines = list((await db.scalars(select(InvoiceLine).where(InvoiceLine.invoice_id == invoice.id, InvoiceLine.business_id == context.business.id, InvoiceLine.deleted_at.is_(None)))).all())
+    await store_document_pdf(db, invoice, converted_lines, "invoice", user.id)
     estimate.converted_invoice_id = invoice.id
     estimate.updated_by_id = user.id
     await add_audit(db, user, context, "convert", "estimate", estimate.id, {"converted_invoice_id": None}, {"converted_invoice_id": invoice.id, "invoice_number": invoice_number})
-    data = {"id": str(invoice.id), "invoice_number": invoice.invoice_number, "total_amount": str(invoice.total_amount)}
+    data = {"id": str(invoice.id), "invoice_number": invoice.invoice_number, "total_amount": str(invoice.total_amount), "pdf_url": f"/invoices/{invoice.id}/pdf"}
     if record is not None:
         record.response_body = data
     await db.commit()

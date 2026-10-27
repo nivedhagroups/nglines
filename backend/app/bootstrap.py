@@ -1,10 +1,12 @@
 import asyncio
 import os
+import secrets
 
 from sqlalchemy import select
 
 from app.db.base import ExpenseType, OrganizationRole
 from app.core.identity import normalize_phone
+from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models import Business, BusinessSettings, ExpenseCategory, User
 
@@ -39,6 +41,15 @@ async def bootstrap() -> None:
             admin.organization_role = OrganizationRole.SUPER_ADMIN
             admin.is_active = True
 
+        temporary_password = None
+        if not admin.password_hash:
+            configured_password = os.environ.get("INITIAL_SUPER_ADMIN_TEMP_PASSWORD", "").strip()
+            temporary_password = configured_password or secrets.token_urlsafe(18)
+            if len(temporary_password) < 12:
+                raise SystemExit("INITIAL_SUPER_ADMIN_TEMP_PASSWORD must be at least 12 characters")
+            admin.password_hash = hash_password(temporary_password)
+            admin.must_change_password = True
+
         company = await db.scalar(select(BusinessSettings).where(BusinessSettings.business_id == business.id))
         if company is None:
             db.add(
@@ -68,6 +79,11 @@ async def bootstrap() -> None:
             if exists is None:
                 db.add(ExpenseCategory(business_id=business.id, created_by_id=admin.id, name=category_name, expense_type=expense_type, is_active=True))
     print(f"Bootstrap complete for {business_name} ({business_slug})")
+    if temporary_password:
+        if os.environ.get("INITIAL_SUPER_ADMIN_TEMP_PASSWORD", "").strip():
+            print("A temporary Super Admin password was set from INITIAL_SUPER_ADMIN_TEMP_PASSWORD; change it at first sign-in.")
+        else:
+            print(f"One-time Super Admin temporary password: {temporary_password}")
 
 
 if __name__ == "__main__":

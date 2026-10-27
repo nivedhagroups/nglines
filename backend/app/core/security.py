@@ -1,20 +1,28 @@
 import hashlib
-import hmac
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 import jwt
 
 from app.core.config import settings
 
 
-def hash_otp(code: str) -> str:
-    return hmac.new(settings.otp_hmac_secret.encode(), code.encode(), hashlib.sha256).hexdigest()
+_password_hasher = PasswordHasher()
+DUMMY_PASSWORD_HASH = _password_hasher.hash("not-a-real-user-password")
 
 
-def verify_otp(code: str, expected_hash: str) -> bool:
-    return hmac.compare_digest(hash_otp(code), expected_hash)
+def hash_password(password: str) -> str:
+    return _password_hasher.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return _password_hasher.verify(password_hash, password)
+    except (InvalidHashError, VerificationError, VerifyMismatchError):
+        return False
 
 
 def new_refresh_token() -> str:

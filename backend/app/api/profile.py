@@ -52,7 +52,7 @@ async def who_am_i(request: Request, db: Db, user: Annotated[User, Depends(curre
     if user.organization_role:
         available = await db.scalars(select(Business).where(Business.is_active.is_(True)))
         businesses = [{"id": str(b.id), "name": b.name, "role": user.organization_role.value} for b in available]
-    return {"data": {"id": str(user.id), "name": user.name, "email": user.email, "phone": user.phone, "organization_role": user.organization_role.value if user.organization_role else None, "avatar_storage_key": user.avatar_storage_key, "businesses": businesses}, "request_id": getattr(request.state, "request_id", None)}
+    return {"data": {"id": str(user.id), "name": user.name, "email": user.email, "phone": user.phone, "organization_role": user.organization_role.value if user.organization_role else None, "must_change_password": user.must_change_password, "avatar_storage_key": user.avatar_storage_key, "businesses": businesses}, "request_id": getattr(request.state, "request_id", None)}
 
 
 @router.get("/profile")

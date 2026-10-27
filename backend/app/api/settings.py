@@ -1,5 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
+import logging
+import secrets
 import uuid
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -13,9 +15,12 @@ from app.api.deps import BusinessContext, Db, User, business_context, current_us
 from app.db.base import BusinessRole, ExpenseType, OrganizationRole
 from app.models import AuthSession, BrickRate, BrickType, Business, BusinessMembership, BusinessSettings, Employee, ExpenseCategory, GstRate, User as AppUser, Vehicle
 from app.core.identity import normalize_phone
+from app.core.security import hash_password
+from app.providers.email import SMTPEmailDelivery
 
 
 router = APIRouter(tags=["settings"])
+logger = logging.getLogger(__name__)
 ALL_BUSINESS_ROLES = tuple(OrganizationRole) + tuple(BusinessRole)
 ADMINS = (OrganizationRole.SUPER_ADMIN, OrganizationRole.ADMIN)
 GST_CONFIGURATORS = (*ADMINS, OrganizationRole.CEO)
@@ -482,6 +487,9 @@ async def create_user(body: UserCreate, request: Request, db: Db, actor: Annotat
             raise HTTPException(404, "Business not found")
     values = body.model_dump(exclude={"business_id", "business_role"})
     values["email"] = str(body.email).casefold() if body.email else None
+    temporary_password = secrets.token_urlsafe(18)
+    values["password_hash"] = hash_password(temporary_password)
+    values["must_change_password"] = True
     target = AppUser(**values)
     db.add(target)
     await db.flush()
@@ -492,7 +500,45 @@ async def create_user(body: UserCreate, request: Request, db: Db, actor: Annotat
         context = BusinessContext(business=business, role=actor.organization_role)
     await add_audit(db, actor, context, "create", "user", target.id, after={"name": target.name, "email": target.email, "phone": target.phone, "organization_role": target.organization_role.value if target.organization_role else None, "business_id": body.business_id, "business_role": body.business_role.value if body.business_role else None})
     await db.commit()
-    return {"data": {"id": str(target.id), "name": target.name, "email": target.email, "phone": target.phone, "organization_role": target.organization_role.value if target.organization_role else None}, "request_id": getattr(request.state, "request_id", None)}
+    invite_sent = False if target.email else None
+    if target.email:
+        try:
+            await SMTPEmailDelivery().send_invitation(target.email, target.name, temporary_password)
+            invite_sent = True
+        except Exception:
+            logger.exception("User invitation email delivery failed", extra={"user_id": str(target.id)})
+    return {"data": {"id": str(target.id), "name": target.name, "email": target.email, "phone": target.phone, "organization_role": target.organization_role.value if target.organization_role else None, "invite_sent": invite_sent, "temporary_password": None if invite_sent else temporary_password}, "request_id": getattr(request.state, "request_id", None)}
+
+
+@router.post("/users/{target_id}/temporary-password")
+async def reset_user_temporary_password(target_id: uuid.UUID, request: Request, db: Db, actor: Annotated[AppUser, Depends(current_user)]) -> dict:
+    if actor.organization_role not in ADMINS:
+        raise HTTPException(403, "Admin access required")
+    if target_id == actor.id:
+        raise HTTPException(409, "Use change password to update your own password")
+    target = await db.scalar(select(AppUser).where(AppUser.id == target_id).with_for_update())
+    if target is None:
+        raise HTTPException(404, "User not found")
+    if target.organization_role == OrganizationRole.SUPER_ADMIN and actor.organization_role != OrganizationRole.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admin can reset a Super Admin password")
+    temporary_password = secrets.token_urlsafe(18)
+    target.password_hash = hash_password(temporary_password)
+    target.must_change_password = True
+    await db.execute(
+        AuthSession.__table__.update()
+        .where(AuthSession.user_id == target.id, AuthSession.revoked_at.is_(None))
+        .values(revoked_at=func.now())
+    )
+    await add_audit(db, actor, None, "password_reset", "user", target.id, after={"must_change_password": True})
+    await db.commit()
+    invite_sent = False if target.email else None
+    if target.email:
+        try:
+            await SMTPEmailDelivery().send_invitation(target.email, target.name, temporary_password)
+            invite_sent = True
+        except Exception:
+            logger.exception("Temporary password email delivery failed", extra={"user_id": str(target.id)})
+    return {"data": {"user_id": str(target.id), "invite_sent": invite_sent, "temporary_password": None if invite_sent else temporary_password}, "request_id": getattr(request.state, "request_id", None)}
 
 
 @router.patch("/users/{target_id}")

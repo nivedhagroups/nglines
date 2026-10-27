@@ -24,11 +24,6 @@ class BusinessRole(str, enum.Enum):
     ASST_MANAGER = "asst_manager"
 
 
-class OtpChannel(str, enum.Enum):
-    EMAIL = "email"
-    SMS = "sms"
-
-
 class RecordStatus(str, enum.Enum):
     DRAFT = "draft"
     ISSUED = "issued"
