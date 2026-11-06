@@ -48,14 +48,14 @@ Error response:
 }
 ```
 
-Common status codes: `400` malformed request or invalid state transition; `401` missing/expired authentication; `403` role not permitted; `404` missing or out-of-scope resource; `409` uniqueness, sequence, or state conflict; `422` field validation; `429` OTP/API rate limit; `500` unexpected server error. Error codes are stable machine-readable identifiers.
+Common status codes: `400` malformed request or invalid state transition; `401` missing/expired authentication; `403` role not permitted or password change required; `404` missing or out-of-scope resource; `409` uniqueness, sequence, or state conflict; `422` field validation; `429` sign-in/API rate limit; `500` unexpected server error. Error codes are stable machine-readable identifiers.
 
 ## Authentication and Profile
 
 | Method and path | Request | Response / access |
 | --- | --- | --- |
-| `POST /auth/otp/request` | `{ "identifier": "person@example.com" }` or phone; optional `channel: "email" | "sms"` when identifier is ambiguous | `202 { "challenge_id", "expires_in_seconds": 300 }`; unauthenticated, rate limited. Never reveals whether an account exists. |
-| `POST /auth/otp/verify` | `{ "challenge_id", "code" }` | `200 { "access_token", "expires_in", "refresh_token", "user", "businesses" }`; code is six digits, maximum attempts enforced. |
+| `POST /auth/login` | `{ "identifier": "person@example.com" | "+91…", "password": "…" }` | `200` session payload; generic `401` for invalid credentials and `429` after repeated attempts. `user.must_change_password` indicates a temporary password. |
+| `POST /auth/password/change` | `{ "current_password", "new_password" }`; new password is at least 12 characters | Changes the password, revokes previous sessions, and returns a fresh session. Temporary-password users may access only this endpoint and their own `/auth/me` until changed. |
 | `POST /auth/refresh` | `{ "refresh_token" }` | Rotated access/refresh token pair; old refresh token is invalidated. |
 | `POST /auth/logout` | `{ "refresh_token" }` | `204`; revokes this refresh-token session. |
 | `GET /auth/me` | None | Current user, organization role, memberships, accessible businesses. |
@@ -91,14 +91,11 @@ Managers, Asst Managers, CEO, Admin, and Super Admin have access within the busi
 | Method and path | Request / query | Response / access |
 | --- | --- | --- |
 | `GET /invoices` | `q`, `customer_id`, `status`, `from`, `to`, `limit`, `cursor` | Paginated invoices; search includes invoice number and customer name/mobile. |
-| `POST /invoices` | Invoice payload below | `201` immutable issued invoice and calculated totals; Manager, Asst Manager, CEO, Admin, Super Admin. |
-| `GET /invoices/{invoice_id}` | None | Header, line items, stored snapshots, totals, PDF metadata, share-link state. |
-| `PATCH /invoices/{invoice_id}` | Editable fields only, with `If-Match` version/ETag | Updated invoice; audited. Updates must preserve numbering and regenerate PDF. Role policy permits invoice creators/authorized managers; Admin/Super Admin have full access. |
+| `POST /invoices` | Invoice payload below | `201` issued invoice, calculated totals, and generated `pdf_url`; Manager, Asst Manager, CEO, Admin, Super Admin. |
+| `GET /invoices/{invoice_id}` | None | Header, line items, stored snapshots, totals, and `pdf_url`. |
+| `GET /invoices/{invoice_id}/pdf` | None | Authenticated, business-scoped PDF download. The mobile app opens this file in the native share sheet. |
+| `PATCH /invoices/{invoice_id}` | Editable fields only, with `If-Match` version/ETag | Updated invoice and regenerated PDF; audited. |
 | `DELETE /invoices/{invoice_id}` | Required `reason` | Soft-cancel invoice; audited. Never hard deletes. |
-| `POST /invoices/{invoice_id}/pdf` | None | Generates/regenerates PDF and returns file metadata. |
-| `POST /invoices/{invoice_id}/share-links` | Optional `label` | Creates persistent, revocable link; raw token is returned only once. |
-| `DELETE /invoices/{invoice_id}/share-links/{link_id}` | None | Revokes link. |
-| `GET /shared/invoices/{token}` | Public opaque token | Downloads/streams invoice PDF if token is valid and not revoked. No account required. |
 
 Invoice creation payload:
 
@@ -125,14 +122,12 @@ Invoice response includes `{ id, invoice_number, financial_year, invoice_date, c
 | Method and path | Request / query | Response / access |
 | --- | --- | --- |
 | `GET /estimates` | `q`, `customer_id`, `status`, `from`, `to`, `limit`, `cursor` | Paginated estimate list. |
-| `POST /estimates` | Same structure as invoice creation | `201` estimate with `ESTIMATE – Not a Tax Invoice` watermark; same roles as invoice creation. |
-| `GET /estimates/{estimate_id}` | None | Estimate and line-item snapshots. |
-| `PATCH /estimates/{estimate_id}` | Editable estimate fields | Updated estimate, audited. |
+| `POST /estimates` | Same structure as invoice creation | `201` estimate with `ESTIMATE - NOT A TAX INVOICE` label and generated `pdf_url`; same roles as invoice creation. |
+| `GET /estimates/{estimate_id}` | None | Estimate, line-item snapshots, and `pdf_url`. |
+| `GET /estimates/{estimate_id}/pdf` | None | Authenticated, business-scoped PDF download. The mobile app opens this file in the native share sheet. |
+| `PATCH /estimates/{estimate_id}` | Editable estimate fields | Updated estimate and regenerated PDF, audited. |
 | `DELETE /estimates/{estimate_id}` | Required `reason` | Soft delete; audited. |
-| `POST /estimates/{estimate_id}/pdf` | None | Generate PDF. PDF and share artifact expire after 24 hours; record stays available. |
-| `POST /estimates/{estimate_id}/share-links` | None | Link expires no later than 24 hours after creation. |
-| `POST /estimates/{estimate_id}/convert` | `{ "invoice_date": "2026-10-24" }` | Creates a new invoice with fresh invoice number, copying estimate values and retaining a link to source estimate. Safe to retry with idempotency key. |
-| `GET /shared/estimates/{token}` | Public opaque token | PDF download until expiration or revocation. |
+| `POST /estimates/{estimate_id}/convert` | `{ "invoice_date": "2026-10-24" }` | Creates a new invoice with fresh invoice number and PDF, copying estimate values and retaining a link to source estimate. Safe to retry with idempotency key. |
 
 ## Expenses and Account Management
 
@@ -206,10 +201,11 @@ Diesel amount is computed as litres multiplied by unit rate; a submitted amount 
 | `PATCH /settings/employees/{id}` | Employee fields / active state | Admin, Super Admin. |
 | `GET /users` | `business_id?`, `q`, `role?`, `status?`, `limit`, `cursor` | Admin and Super Admin only. |
 | `POST /users` | `{ "name", "email?", "phone?", "organization_role?", "business_id?", "business_role?" }` | Admin and Super Admin. Manager/Asst Manager must have one business assignment; one of email/phone required. |
+| `POST /users/{user_id}/temporary-password` | None | Admin and Super Admin; invalidates prior sessions, sends a temporary password to email when available, otherwise returns it once to the administrator. |
 | `PATCH /users/{user_id}` | Editable profile, role/membership, active state | Admin and Super Admin; prevents self-escalation and invalid role/scope combinations. |
 | `DELETE /users/{user_id}` | None | Deactivates user, revokes active sessions; no hard delete. Admin and Super Admin. |
 
-For user creation, Admin cannot create or assign Super Admin; only Super Admin can grant/revoke the Super Admin role. Admin can manage other users and assign organization/business roles permitted by policy.
+For user creation, Admin cannot create or assign Super Admin; only Super Admin can grant/revoke the Super Admin role. Admin can manage other users and assign organization/business roles permitted by policy. New accounts receive a unique temporary password and must change it before using protected app features. Email invitations contain the temporary password; when email is unavailable, the creator receives it once in the API response.
 
 ## Doubtful Transactions and Notifications
 
@@ -233,7 +229,7 @@ For user creation, Admin cannot create or assign Super Admin; only Super Admin c
 | --- | --- | --- |
 | `GET /audit-logs` | `business_id?`, `actor_id?`, `entity_type?`, `entity_id?`, `action?`, `from`, `to`, `limit`, `cursor` | Super Admin only. Paginated immutable events with before/after values and timestamp. Admin and all other roles receive `403`. |
 
-Audit entries are generated server-side; clients cannot write or modify them. Sensitive values such as OTP hashes, access/refresh tokens, share tokens, and uploaded file contents are excluded from audit snapshots.
+Audit entries are generated server-side; clients cannot write or modify them. Sensitive values such as password hashes, temporary passwords, access/refresh tokens, share tokens, and uploaded file contents are excluded from audit snapshots.
 
 ## Role Access Matrix
 
@@ -260,6 +256,6 @@ Admin has broad operational access but no audit-log access. CEO has group-wide b
 - Invoice/estimate create and estimate-conversion endpoints accept `Idempotency-Key`; duplicate retries return the original result, while reusing a key for a different payload returns `409`. Invoice numbering is allocated transactionally per business and FY, with a database uniqueness constraint as the final guard.
 - Updates to invoices, estimates, expenses, and configuration should use `If-Match` with an ETag/version. Stale writes return `409 conflict` and do not overwrite newer data.
 - Server validates customer ownership, active effective rates, GST selection, allowed discount/override permissions, date ranges, amounts, expense-type-specific fields, advance-recovery balance, and flag transitions.
-- OTPs are six digits, expire after five minutes, have a maximum of five verification attempts, and are rate limited per destination. OTP is never returned by API responses or stored in plaintext.
+- Passwords are stored with Argon2id hashes, require at least 12 characters when changed, and sign-in is rate limited by normalized email/phone. Temporary passwords are unique per account and are invalidated when replaced or reset.
 - File uploads have size/type limits and are stored outside the web root. Public share endpoints use high-entropy bearer tokens, store only token hashes, support revocation, and enforce estimate expiration.
 - List APIs use allowlisted sort keys and bounded page sizes. Do not expose arbitrary database column sorting or unrestricted audit history.
